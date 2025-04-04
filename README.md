@@ -50,8 +50,7 @@ This project is inspired by Figma, allowing users to design interfaces at a basi
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-repo.git
-   cd your-repo
+   git clone [https://github.com/your-repo.git](https://github.com/MinhTamNT/Real_Time_Contrusctions)
    ```
 2. **Install dependencies**:
    ```bash
