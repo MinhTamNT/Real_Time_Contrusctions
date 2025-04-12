@@ -32,11 +32,11 @@ This project is inspired by Figma, allowing users to design interfaces at a basi
 
 ## Architecture
 
-![Architecture Diagram](image-2.png)
+![Architecture Diagram](Readme/2.png)
 
 ## Database Schema
 
-![Database Schema](image.png)
+![Database Schema](Readme/image.png)
 
 ## Installation
 
@@ -78,14 +78,17 @@ This project is inspired by Figma, allowing users to design interfaces at a basi
 ## Usage
 
 ### Creating a Project
+
 1. Navigate to the "Projects" page.
 2. Click on "Add Project" and fill in the project details.
 3. Invite collaborators by entering their email addresses.
 
 ### Managing Roles
+
 - Use the "Manage Members" feature to assign roles such as Host or Collaborator.
 
 ### Exporting Designs
+
 - Use the "Export to PDF" option to download your design as a PDF file.
 
 ## API Endpoints
@@ -93,11 +96,13 @@ This project is inspired by Figma, allowing users to design interfaces at a basi
 ### GraphQL Queries and Mutations
 
 #### Queries:
+
 - `getUserProjects`: Fetch user projects.
 - `getMememberInProject`: Get members in a project.
 - `getNotificationsByUserId`: Fetch notifications for a user.
 
 #### Mutations:
+
 - `addProject`: Create a new project.
 - `InvitedUser`: Invite a user to a project.
 - `updateInivitation`: Update invitation status.
