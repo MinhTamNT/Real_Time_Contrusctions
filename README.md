@@ -50,8 +50,7 @@ This project is inspired by Figma, allowing users to design interfaces at a basi
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-repo.git
-   cd your-repo
+   git clone https://github.com/MinhTamNT/Real_Time_Contrusctions
    ```
 2. **Install dependencies**:
    ```bash
@@ -98,7 +97,7 @@ This project is inspired by Figma, allowing users to design interfaces at a basi
 #### Queries:
 
 - `getUserProjects`: Fetch user projects.
-- `getMememberInProject`: Get members in a project.
+- `getMemberInProject`: Get members in a project.
 - `getNotificationsByUserId`: Fetch notifications for a user.
 
 #### Mutations:
@@ -130,4 +129,4 @@ This project is licensed under the MIT License. See the LICENSE file for details
 
 ## Contact
 
-For any questions or feedback, please contact [your-email@example.com].
+For any questions or feedback, please contact [minhtam78945@gmail.com].
