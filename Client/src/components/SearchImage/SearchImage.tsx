@@ -1,167 +1,267 @@
-import React, { useState } from "react";
-import { FaUpload, FaTimes } from "react-icons/fa";
-import axios from "axios";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import Select from "react-select";
+import { API, endPoints } from "../../config/APIConfig";
 
-interface SearchModalProps {
-  isOpen: boolean;
+type SearchImageModalProps = {
   onClose: () => void;
+};
+
+interface ResultImage {
+  distance: number;
+  image_path: string;
 }
 
-const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose }) => {
-  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
-  const [scanning, setScanning] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [queryText, setQueryText] = useState("");
-  const [similarImages, setSimilarImages] = useState<any[]>([]);
+interface TagOption {
+  value: string;
+  label: string;
+}
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files) {
-      const newImages = Array.from(files).map((file) =>
-        URL.createObjectURL(file)
-      );
-      setUploadedImages((prev) => [...prev, ...newImages]);
-    }
-  };
+interface TagResponse {
+  id: number;
+  tag_name: string;
+}
 
-  const handleImageClick = (index: number) => {
-    setSelectedIndex(index);
-  };
-
-  const handleScanImages = async () => {
-    setScanning(true);
-    setSimilarImages([]);
-
+const SearchImageModal = ({ onClose }: SearchImageModalProps) => {
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [resultImage, setResultImage] = useState<ResultImage[]>([]);
+  const [selectedTags, setSelectedTags] = useState<TagOption[]>([]);
+  const [tagOptions, setTagOptions] = useState<TagOption[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [isLoadingTags, setIsLoadingTags] = useState(false);
+  const [pageSize, setPageSize] = useState(10);
+  const [pageIndex, setPageIndex] = useState(1);
+  const fetchTags = async (search: string = "") => {
+    setIsLoadingTags(true);
     try {
-      const payload: any = {};
-      if (selectedIndex !== null) {
-        payload.image_index = selectedIndex; // Chỉ gửi image_index nếu có
-      } else if (queryText.trim() !== "") {
-        payload.query_text = queryText; // Chỉ gửi query_text nếu có
-      }
+      const response = await API.get(endPoints.Tags, {
+        params: {
+          search_name: search,
+          page: pageIndex,
+          per_page: pageSize,
+        },
+      });
 
-      // Gửi request chỉ với trường cần thiết
-      const response = await axios.post(
-        "http://127.0.0.1:5000/similar_images",
-        payload
-      );
+      const { results } = response.data;
 
-      const fetchedSimilarImages = response.data.map((img: any) => ({
-        imagePath: `http://127.0.0.1:5000/images/${img.image_path
-          .split("/")
-          .pop()}`,
-        similarity: img.similarity,
+      const options = results.map((tag: TagResponse) => ({
+        value: String(tag.id),
+        label: String(tag.tag_name),
       }));
 
-      setSimilarImages(fetchedSimilarImages);
+      setTagOptions((prevOptions) => [...prevOptions, ...options]);
     } catch (error) {
-      console.error("Error scanning images:", error);
+      console.error("Error fetching tags:", error);
     } finally {
-      setScanning(false);
+      setIsLoadingTags(false);
     }
   };
 
-  return isOpen ? (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-80">
-      <div className="bg-white rounded-lg p-6 w-4/5 md:w-1/3 shadow-lg relative">
+  useEffect(() => {
+    fetchTags();
+  }, []);
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => setImageSrc(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => setImageSrc(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleScan = async () => {
+    if (!imageSrc && selectedTags.length === 0) {
+      setMessage("Please provide an image or select tags to search.");
+      return;
+    }
+
+    setIsScanning(true);
+    setMessage(null);
+
+    try {
+      const formData = new FormData();
+
+      if (imageSrc) {
+        const response = await fetch(imageSrc);
+        const blob = await response.blob();
+        formData.append("file", blob);
+      }
+
+      if (selectedTags.length > 0) {
+        const tagValues = selectedTags.map((tag) => tag.label);
+        formData.set("tags", JSON.stringify(tagValues));
+      }
+
+      const res = await API.post(endPoints.SearchImage, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      const data = res.data;
+
+      if (data.results.length === 0) {
+        setMessage("No similar images found.");
+      } else {
+        setResultImage(data.results);
+      }
+    } catch (error) {
+      console.error("Error scanning image:", error);
+      setMessage("An error occurred while scanning.");
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleDelete = () => {
+    setImageSrc(null);
+    setResultImage([]);
+    setSelectedTags([]);
+    setMessage(null);
+  };
+
+  const handleImageDoubleClick = (imagePath: string) => {
+    const event = new CustomEvent("addImageToCanvas", {
+      detail: { imagePath },
+    });
+    window.dispatchEvent(event);
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex  justify-center items-center z-50">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-4xl relative">
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 text-gray-600 hover:text-gray-800"
+          className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
         >
-          <FaTimes size={20} />
+          ✕
         </button>
-
-        <h2 className="text-3xl font-extrabold mb-6 text-center text-gray-800">
-          Upload Your Images
+        <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">
+          Search Image
         </h2>
 
-        <label className="flex items-center justify-center h-12 bg-blue-600 text-white rounded-lg cursor-pointer shadow-lg hover:bg-blue-700 transition duration-200 mb-4">
-          <FaUpload className="mr-2 text-lg" />
-          <span className="font-medium">Choose Files</span>
+        <div
+          onDrop={handleDrop}
+          onDragOver={(e) => e.preventDefault()}
+          className="border-2 border-dashed border-gray-300 rounded-lg h-48 flex justify-center items-center mb-6 relative hover:border-blue-500 transition-all"
+          onClick={() => document.getElementById("fileInput")?.click()}
+        >
+          {imageSrc ? (
+            <div className="relative w-full h-full">
+              <img
+                src={imageSrc}
+                alt="Uploaded"
+                className="w-full h-full object-cover rounded-lg"
+              />
+              <button
+                onClick={handleDelete}
+                className="absolute top-2 right-2 bg-red-500 text-white text-sm px-2 py-1 rounded hover:bg-red-600 transition-all"
+              >
+                Delete
+              </button>
+            </div>
+          ) : (
+            <p className="text-gray-500">
+              Click or drag an image here to upload
+            </p>
+          )}
           <input
+            id="fileInput"
             type="file"
             accept="image/*"
-            multiple
-            onChange={handleImageUpload}
-            className="hidden"
+            onChange={handleFileChange}
+            className="absolute inset-0 opacity-0 cursor-pointer"
           />
-        </label>
+        </div>
 
-        <input
-          type="text"
-          value={queryText}
-          onChange={(e) => setQueryText(e.target.value)}
-          placeholder="Enter search text"
-          className="border rounded-lg p-2 mb-4 w-full text-black"
-        />
+        <div className="mb-6">
+          <label className="block text-gray-700 font-medium mb-2">
+            Select Tags
+          </label>
+          <Select
+            isMulti
+            options={tagOptions}
+            value={selectedTags}
+            onChange={(selected) => setSelectedTags(selected as TagOption[])}
+            onInputChange={(inputValue) => {
+              setTagOptions([]);
+              fetchTags(inputValue);
+            }}
+            isLoading={isLoadingTags}
+            placeholder="Search and select tags..."
+            className="basic-multi-select"
+            classNamePrefix="select"
+          />
+        </div>
 
         <button
-          onClick={handleScanImages}
-          className={`w-full bg-gradient-to-r from-green-500 to-green-700 text-white rounded-lg p-3 shadow-lg hover:from-green-600 hover:to-green-800 transition duration-200 ${
-            scanning ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-          disabled={scanning}
+          onClick={handleScan}
+          className={`w-full px-4 py-2 rounded-lg text-white ${
+            isScanning
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-blue-500 hover:bg-blue-600"
+          } transition-all`}
+          disabled={isScanning}
         >
-          {scanning ? "Scanning..." : "Scan Images"}
+          {isScanning ? "Scanning..." : "Scan Image"}
         </button>
 
-        {scanning && (
-          <div className="flex items-center justify-center mt-4">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-600"></div>
+        {isScanning && (
+          <div className="relative w-full h-4 bg-gray-200 rounded overflow-hidden mt-6">
+            <div className="absolute top-0 left-0 h-full w-full bg-gradient-to-r from-blue-500 via-blue-300 to-blue-500 animate-scan-glow"></div>
           </div>
         )}
 
-        <div className="mt-6">
-          {uploadedImages.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {uploadedImages.map((image, index) => (
-                <div
-                  key={index}
-                  onClick={() => handleImageClick(index)}
-                  className={`relative overflow-hidden rounded-lg shadow-lg transition-transform transform hover:scale-105 ${
-                    selectedIndex === index ? "border-2 border-blue-500" : ""
-                  }`}
-                >
-                  <img
-                    src={image}
-                    alt={`Uploaded ${index}`}
-                    className="w-full h-auto rounded-lg"
-                    loading="lazy"
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-center text-gray-500">No images uploaded.</p>
-          )}
-        </div>
+        {message && <p className="text-center text-gray-500 mt-6">{message}</p>}
 
-        {similarImages.length > 0 && (
-          <div className="mt-6">
-            <h3 className="text-xl font-bold mb-4">Similar Images</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {similarImages.map((img, index) => (
-                <div
-                  key={index}
-                  className="relative overflow-hidden rounded-lg shadow-lg"
-                >
-                  <img
-                    src={img.imagePath}
-                    alt={`Similar ${index}`}
-                    className="w-full h-auto rounded-lg"
-                    loading="lazy"
-                  />
-                  <p className="text-center text-gray-600">
-                    Similarity: {img.similarity.toFixed(2)}
-                  </p>
-                </div>
-              ))}
+        {resultImage.length > 0 && (
+          <div className="overflow-x-auto">
+            <div
+              className="flex flex-nowrap gap-4 mt-6"
+              style={{ height: "auto" }}
+            >
+              <div className="flex flex-col gap-4">
+                {[...Array(3)].map((_, rowIndex) => (
+                  <div key={rowIndex} className="flex flex-nowrap gap-4">
+                    {resultImage
+                      .slice(rowIndex * 10, rowIndex * 10 + 10)
+                      .map((item: ResultImage, index: number) => (
+                        <div
+                          key={`${rowIndex}-${index}`}
+                          className="min-w-[200px] rounded-lg overflow-hidden shadow-lg transform transition-transform hover:scale-105 hover:shadow-xl bg-white"
+                          onDoubleClick={() =>
+                            handleImageDoubleClick(item.image_path)
+                          }
+                        >
+                          <img
+                            src={item.image_path}
+                            alt={`Result ${index + 1}`}
+                            className="w-full h-40 object-cover"
+                          />
+                        </div>
+                      ))}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
       </div>
-    </div>
-  ) : null;
+    </div>,
+    document.body
+  );
 };
 
-export default SearchModal;
+export default SearchImageModal;

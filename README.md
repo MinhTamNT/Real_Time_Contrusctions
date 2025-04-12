@@ -29,6 +29,7 @@ This project is inspired by Figma, allowing users to design interfaces at a basi
 6. [Contributing](#contributing)
 7. [License](#license)
 8. [Contact](#contact)
+9. [Related Projects](#related-projects)
 
 ## Architecture
 
@@ -130,3 +131,8 @@ This project is licensed under the MIT License. See the LICENSE file for details
 ## Contact
 
 For any questions or feedback, please contact [minhtam78945@gmail.com].
+
+## Related Projects
+
+- **AI Search Image**: A project for searching images using AI. You can clone it from the following repository:
+  [AI Search Image Repository](https://github.com/MinhTamNT/AI_Search_Image)

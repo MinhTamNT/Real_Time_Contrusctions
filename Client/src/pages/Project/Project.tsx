@@ -1,6 +1,14 @@
 import { LiveMap } from "@liveblocks/client";
 import { useMutation, useRedo, useStorage, useUndo } from "@liveblocks/react";
 import { fabric } from "fabric";
+
+declare module "fabric" {
+  namespace fabric {
+    interface Image {
+      hasUploaded?: boolean;
+    }
+  }
+}
 import { useEffect, useRef, useState } from "react";
 import { Live } from "../../components/Live/Live";
 import { uploadImageToCloudinary } from "../../helper/UpdateImage";
@@ -29,9 +37,12 @@ import { RootState } from "../../Redux/store";
 import { useSelector } from "react-redux";
 import { NOTIFICATION_SUBSCRIPTION } from "../../utils/Notify/Notify";
 import { useSubscription } from "@apollo/client";
-import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
-
+import { toast } from "react-toastify";
+import { CanvasObject } from "../../lib/interface";
+import { useOthers } from "@liveblocks/react/suspense";
+import { useRoom } from "@liveblocks/react";
+import "../../index.css";
 interface UserRequest {
   idUser: string;
 }
@@ -44,7 +55,7 @@ export const Project = () => {
   const isDrawing = useRef(false);
   const shapeRef = useRef<fabric.Object | null>(null);
   const selectedShapeRef = useRef<string | null>(null);
-  const [notifications, setNotifications] = useState<string[]>([]);
+  const [, setNotifications] = useState<string[]>([]);
   const [activeElement, setActiveElement] = useState<ActiveElement>({
     name: "",
     value: "",
@@ -65,11 +76,11 @@ export const Project = () => {
   const user = useSelector(
     (state: RootState) => state?.user?.user?.currentUser
   );
-  console.log(user?.sub);
   const userRole = useSelector(
     (state: RootState) => state?.role?.role?.userRole
   );
-  console.log(userRole);
+  const other = useOthers();
+  const room = useRoom();
   const navigate = useNavigate();
   useSubscription(NOTIFICATION_SUBSCRIPTION, {
     onSubscriptionData: ({ subscriptionData }) => {
@@ -104,7 +115,23 @@ export const Project = () => {
     event.stopPropagation();
     const file = event.target.files ? event.target.files[0] : "";
     try {
-      const newImage = await uploadImageToCloudinary(file as string);
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        if (event.target?.result) {
+          const newImage = await uploadImageToCloudinary(
+            event.target.result as string
+          );
+          if (newImage) {
+            handleImageUpload({
+              file: newImage?.url,
+              canvas: fabricRef.current as any,
+              shapeRef,
+              syncShapeInStorage,
+            });
+          }
+        }
+      };
+      reader.readAsDataURL(file);
       if (newImage) {
         handleImageUpload({
           file: newImage?.url,
@@ -121,14 +148,14 @@ export const Project = () => {
     string,
     CanvasObject
   >;
+  console.log(other);
 
   const syncShapeInStorage = useMutation(
     ({ storage }, object: fabric.Object) => {
       if (!object) return;
 
-      const { objectId } = object;
-      const shapeData = object.toJSON();
-      shapeData.objectId = objectId;
+      const objectId = (object as any).objectId;
+      const shapeData = { ...object.toJSON(), objectId };
 
       const canvasObjects = storage.get("canvasObjects") as LiveMap<
         string,
@@ -196,120 +223,203 @@ export const Project = () => {
 
   useEffect(() => {
     const canvas = initializeFabric({ canvasRef, fabricRef });
-    if (canvas && userRole.access === "ROLE_READ") {
+
+    if (!canvas) {
+      console.error("Canvas not initialized");
+      return;
+    }
+
+    if (userRole.access === "ROLE_READ") {
       canvas.selection = false;
       canvas.forEachObject((obj) => {
         obj.selectable = false;
         obj.evented = false;
       });
       return;
-    } else if (canvas) {
-      canvas.on("mouse:down", (options) => {
-        handleCanvasMouseDown({
-          options,
-          canvas,
-          selectedShapeRef,
-          isDrawing,
-          shapeRef,
-        });
-      });
-      canvas.on("mouse:move", (options) => {
-        handleCanvaseMouseMove({
-          options,
-          canvas,
-          isDrawing,
-          shapeRef,
-          selectedShapeRef,
-          syncShapeInStorage,
-        });
-      });
-      canvas.on("mouse:up", (options: any) => {
-        handleCanvasMouseUp({
-          canvas,
-          isDrawing,
-          shapeRef,
-          selectedShapeRef,
-          syncShapeInStorage,
-          setActiveElement,
-          activeObjectRef,
-        });
-      });
+    }
 
-      canvas.on("object:modified", (options) => {
-        handleCanvasObjectModified({
-          options,
-          syncShapeInStorage,
-        });
+    canvas.on("mouse:down", (options) => {
+      if (!options) {
+        console.error("Mouse down options are undefined");
+        return;
+      }
+      handleCanvasMouseDown({
+        options,
+        canvas,
+        selectedShapeRef,
+        isDrawing,
+        shapeRef,
       });
+    });
 
-      canvas.on("selection:created", (options: any) => {
-        handleCanvasSelectionCreated({
-          options,
-          isEditingRef,
-          setElementAttributes: setElementAtrributes,
-        });
+    canvas.on("mouse:move", (options) => {
+      if (!options) {
+        console.error("Mouse move options are undefined");
+        return;
+      }
+      handleCanvaseMouseMove({
+        options,
+        canvas,
+        isDrawing,
+        shapeRef,
+        selectedShapeRef,
+        syncShapeInStorage,
       });
+    });
 
-      canvas.on("path:created", (options) => {
-        handlePathCreated({
-          options,
-          syncShapeInStorage,
-        });
+    canvas.on("mouse:up", (options: any) => {
+      if (!options) {
+        console.error("Mouse up options are undefined");
+        return;
+      }
+      handleCanvasMouseUp({
+        canvas,
+        isDrawing,
+        shapeRef,
+        selectedShapeRef,
+        syncShapeInStorage,
+        setActiveElement,
+        activeObjectRef,
       });
+    });
 
-      canvas?.on("object:moving", (options) => {
-        handleCanvasObjectMoving({
-          options,
-        });
+    canvas.on("object:modified", (options) => {
+      handleCanvasObjectModified({
+        options,
+        syncShapeInStorage,
       });
+    });
 
-      canvas.on("object:scaling", (options) => {
-        handleCanvasObjectScaling({
-          options,
-          setElementAttributes: setElementAtrributes,
-        });
+    canvas.on("selection:created", (options: any) => {
+      handleCanvasSelectionCreated({
+        options,
+        isEditingRef,
+        setElementAttributes: setElementAtrributes,
       });
+    });
 
-      canvas.on("mouse:wheel", (options) => {
-        handleCanvasZoom({
-          canvas,
-          options,
-        });
+    canvas.on("path:created", (options) => {
+      handlePathCreated({
+        options,
+        syncShapeInStorage,
       });
+    });
 
-      const handleResizeEvent = () => {
-        handleResize({ canvas: fabricRef.current });
-      };
+    canvas?.on("object:moving", (options) => {
+      handleCanvasObjectMoving({
+        options,
+      });
+    });
 
-      window.addEventListener("resize", handleResizeEvent);
-      window.addEventListener("keydown", (e) => {
+    canvas.on("object:scaling", (options) => {
+      handleCanvasObjectScaling({
+        options,
+        setElementAttributes: setElementAtrributes,
+      });
+    });
+
+    canvas.on("mouse:wheel", (options) => {
+      handleCanvasZoom({
+        canvas,
+        options,
+      });
+    });
+
+    const handleResizeEvent = () => {
+      handleResize({ canvas: fabricRef.current });
+    };
+    const handlePaste = async (e: ClipboardEvent) => {
+      e.preventDefault();
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of items) {
+        if (item.type.startsWith("image")) {
+          const file = item.getAsFile();
+          if (!file) continue;
+
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            if (!event.target?.result) return;
+
+            fabric.Image.fromURL(event.target.result as string, async (img) => {
+              if (!img) return;
+
+              img.scaleToWidth(200);
+              img.set({
+                left: 100,
+                top: 100,
+                selectable: true,
+                hasUploaded: false,
+              });
+
+              canvas.add(img);
+              canvas.setActiveObject(img);
+              canvas.renderAll();
+
+              const loadingOverlay = document.createElement("div");
+              loadingOverlay.className =
+                "absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50";
+              loadingOverlay.innerHTML = `
+                <div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full text-white"></div>
+              `;
+              document.body.appendChild(loadingOverlay);
+
+              try {
+                const newImage = await uploadImageToCloudinary(file);
+                if (newImage) {
+                  handleImageUpload({
+                    file: newImage.secure_url,
+                    canvas: fabricRef.current as any,
+                    shapeRef,
+                    syncShapeInStorage,
+                  });
+
+                  img.setSrc(newImage.secure_url, () => {
+                    img.hasUploaded = true;
+                    canvas.renderAll();
+                  });
+                }
+              } catch (error) {
+                console.error("Error uploading image:", error);
+              } finally {
+                document.body.removeChild(loadingOverlay);
+              }
+            });
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    };
+
+    window.addEventListener("paste", handlePaste);
+    window.addEventListener("resize", handleResizeEvent);
+    window.addEventListener("keydown", (e) => {
+      handleKeyDown({
+        e,
+        canvas,
+        undo,
+        redo,
+        syncShapeInStorage,
+        deleteShapeFromStorage,
+      });
+    });
+    return () => {
+      canvas.dispose();
+
+      window.removeEventListener("resize", handleResizeEvent);
+      window.removeEventListener("keydown", (e) =>
         handleKeyDown({
           e,
-          canvas,
+          canvas: fabricRef.current,
           undo,
           redo,
           syncShapeInStorage,
           deleteShapeFromStorage,
-        });
-      });
-
-      return () => {
-        canvas.dispose();
-        window.removeEventListener("resize", handleResizeEvent);
-        window.removeEventListener("keydown", (e) =>
-          handleKeyDown({
-            e,
-            canvas: fabricRef.current,
-            undo,
-            redo,
-            syncShapeInStorage,
-            deleteShapeFromStorage,
-          })
-        );
-      };
-    } else {
-      console.log("Canvas not initialized");
-    }
+        })
+      );
+      window.removeEventListener("paste", handlePaste);
+    };
   }, [canvasRef, userRole]);
 
   useEffect(() => {
@@ -317,6 +427,77 @@ export const Project = () => {
       renderCanvas({ fabricRef, activeObjectRef, canvasObjects });
     }
   }, [canvasObjects]);
+
+  useEffect(() => {
+    const handleAddImageToCanvas = async (event: CustomEvent) => {
+      const { imagePath } = event.detail;
+
+      fabric.Image.fromURL(imagePath, async (img) => {
+        if (img) {
+          img.scaleToWidth(200);
+          img.set({
+            left: 300,
+            top: 300,
+            selectable: true,
+          });
+
+          // Add the image to the canvas
+          const canvas = fabricRef.current;
+          if (canvas) {
+            canvas.add(img);
+            canvas.setActiveObject(img);
+            canvas.renderAll();
+          }
+
+          // Add loading overlay
+          const loadingOverlay = document.createElement("div");
+          loadingOverlay.className =
+            "absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50";
+          loadingOverlay.innerHTML = `
+            <div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full text-white"></div>
+          `;
+          document.body.appendChild(loadingOverlay);
+
+          try {
+            const response = await fetch(imagePath);
+            const blob = await response.blob();
+            const base64Data = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(blob);
+            });
+
+            const cloudinaryData = await uploadImageToCloudinary(base64Data);
+            console.log(cloudinaryData?.secure_url);
+            if (cloudinaryData?.secure_url) {
+              img.setSrc(cloudinaryData.secure_url, () => {
+                canvas?.renderAll();
+              });
+              handleImageUpload({
+                file: cloudinaryData.secure_url,
+                canvas: fabricRef.current as any,
+                shapeRef,
+                syncShapeInStorage,
+              });
+            }
+          } catch (error) {
+            console.error("Error uploading image to Cloudinary:", error);
+          } finally {
+            if (loadingOverlay) {
+              document.body.removeChild(loadingOverlay);
+            }
+          }
+        }
+      });
+    };
+
+    const eventListener = handleAddImageToCanvas as unknown as EventListener;
+    window.addEventListener("addImageToCanvas", eventListener);
+
+    return () => {
+      window.removeEventListener("addImageToCanvas", eventListener);
+    };
+  }, [fabricRef]);
 
   return (
     <main className="h-screen overflow-hidden">
